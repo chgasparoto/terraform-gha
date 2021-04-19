@@ -10,8 +10,12 @@ terraform {
   }
 }
 
+variable "now" {
+  default = timestamp()
+}
+
 resource "null_resource" "example" {
   triggers = {
-    value = "A example resource that does nothing! And that's amazing, isn't it?"
+    value = "A example resource that does nothing! And that's amazing, isn't it? It has run on ${var.now}"
   }
 }
