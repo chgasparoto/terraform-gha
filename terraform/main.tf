@@ -10,8 +10,20 @@ terraform {
   }
 }
 
+provider "aws" {
+  region = "eu-central-1"
+}
+
 resource "null_resource" "example" {
   triggers = {
-    value = "A example resource that does nothing! And that's amazing, isn't it?"
+    value = "A example resource that does nothing! And that's amazing, isn't it? It has run on ${timestamp()}"
   }
+}
+
+resource "random_pet" "this" {
+  length = 5
+}
+
+resource "aws_s3_bucket" "this" {
+  bucket = random_pet.this.id
 }
