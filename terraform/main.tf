@@ -10,6 +10,10 @@ terraform {
   }
 }
 
+provider "aws" {
+  region = "eu-central-1"
+}
+
 resource "null_resource" "example" {
   triggers = {
     value = "A example resource that does nothing! And that's amazing, isn't it? It has run on ${timestamp()}"
