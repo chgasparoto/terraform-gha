@@ -6,9 +6,6 @@ jobs:
   terraform:
     name: 'Terraform'
     runs-on: ubuntu-latest
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.TF_AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_AWS_SECRET_ACCESS_KEY }}
 
     defaults:
       run:
@@ -19,6 +16,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.TF_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.TF_AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
         with:
@@ -26,45 +30,96 @@ jobs:
 
       - name: Terraform fmt
         id: fmt
-        run: terraform fmt -check
+        run: terraform fmt -check -diff
         continue-on-error: true
 
       - name: Terraform Init
         id: init
         run: terraform init
+        continue-on-error: true
 
       - name: Terraform Validate
         id: validate
         run: terraform validate -no-color
+        continue-on-error: true
 
       - name: Terraform Plan
         id: plan
         run: terraform plan -no-color
         continue-on-error: true
 
-      - uses: actions/github-script@0.9.0
+      - name: Comment on PR
+        uses: actions/github-script@0.9.0
         if: github.event_name == 'pull_request'
         env:
-          PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
+          format_out: ${{ steps.fmt.outputs.stdout }}
+          format_err: ${{ steps.fmt.outputs.stderr }}
+          init_out: ${{ steps.init.outputs.stdout }}
+          init_err: ${{ steps.init.outputs.stderr }}
+          validate_out: ${{ steps.validate.outputs.stdout }}
+          validate_err: ${{ steps.validate.outputs.stderr }}
+          plan: "${{ steps.plan.outputs.stdout }}"
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
-            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
-            #### Terraform Validation 🤖${{ steps.validate.outputs.stdout }}
-            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
-
-            <details><summary>Show Plan</summary>
-
-            \`\`\`${process.env.PLAN}\`\`\`
-
+            const CODE_BLOCK = '```';
+            const fmt_result = '${{ steps.fmt.outcome }}' === 'failure' ? ':x:' : ':heavy_check_mark:';
+            const init_result = '${{ steps.init.outcome }}' === 'failure' ? ':x:' : ':heavy_check_mark:';
+            const validate_result = '${{ steps.validate.outcome }}' === 'failure' ? ':x:' : ':heavy_check_mark:';
+            const plan_result = '${{ steps.plan.outcome }}' === 'failure' ? ':x:' : ':heavy_check_mark:';
+            const output = `
+            ### ${ fmt_result } Terraform Format and Style 🎨
+            <details><summary>Logs</summary>
+            Output
+            ${ CODE_BLOCK }diff
+            ${ process.env.format_out }
+            ${ CODE_BLOCK }
+            Errors
+            ${ CODE_BLOCK }
+            ${ process.env.format_err }
+            ${ CODE_BLOCK }
+            </details> <!-- End Format Logs -->
+            ### ${ init_result } Terraform Initialization ⚙️
+            <details><summary>Logs</summary>
+            Output
+            ${ CODE_BLOCK }
+            ${ process.env.init_out }
+            ${ CODE_BLOCK }
+            Errors
+            ${ CODE_BLOCK }
+            ${ process.env.init_err }
+            ${ CODE_BLOCK }
+            </details> <!-- End Init Logs -->
+            ### ${ validate_result } Terraform Validation 🤖
+            <details><summary>Logs</summary>
+            Output
+            ${ CODE_BLOCK }
+            ${ process.env.validate_out }
+            ${ CODE_BLOCK }
+            Errors
+            ${ CODE_BLOCK }
+            ${ process.env.validate_err }
+            ${ CODE_BLOCK }
+            </details> <!-- End Validate Logs -->
+            ### ${ plan_result } Terraform Plan 📖
+            <details><summary>Logs</summary>
+            ${ CODE_BLOCK }terraform
+            ${ process.env.plan }
+            ${ CODE_BLOCK }
             </details>
-
             *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Working Directory: \`${{ env.tf_actions_working_dir }}\`, Workflow: \`${{ github.workflow }}\`*`;
-
             github.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: output
             })
+      - name: 'End results'
+        shell: bash
+        run: |
+          echo fmt
+          test ${{ steps.fmt.outputs.exitcode }} -eq 0
+          echo init
+          test ${{ steps.init.outputs.exitcode }} -eq 0
+          echo validate
+          test ${{ steps.validate.outputs.exitcode }} -eq 0
