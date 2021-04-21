@@ -21,5 +21,5 @@ resource "random_pet" "this" {
 }
 
 resource "aws_s3_bucket" "this" {
-  name = random_pet.this.id
+  bucket = random_pet.this.id
 }
